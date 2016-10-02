@@ -1,0 +1,554 @@
+SQL CODES::
+
+##To see the alerts 2 days before an incident occurs , grouped by the incident number and can be order by writeTime. Can be used directly in R or other tables. Donot change the order in TIMESTAMPDIFF
+
+ 
+
+select a.number,b.writeTime,b.Serial,b.Alert_Text from (select i.number,s.writeTime,s.Alert_Text,s.Serial from incident i inner join netcool s on i.u_netcool_id = s.Serial where s.Alert_Text like '%the%') a left outer join netcool b onTIMESTAMPDIFF(MINUTE,b.writeTime,a.writeTime) BETWEEN 1 AND 1000 order by a.number;
+
+
+
+R + SQL CODES::
+
+x <- dbGetQuery(con,"CREATE VIEW jheeldb AS SELECT * From incidentReport i, splunkReport s  WHERE i.u_netcool_id = s.Serial;")
+
+library(DBI)
+library(RMySQL)
+drv <- dbDriver("MySQL")
+con = dbConnect(drv, user="root" , password = "", dbname = "jheel", host = "")
+
+db26 <- dbGetQuery(con,"CREATE VIEW db26 AS SELECT s.Serial,i.number,s.Alert_Text,s.WriteTime From incidentReport i, splunkReport s  WHERE i.u_netcool_id = s.Serial;")
+
+
+
+R CODES::
+#view is my table. VAlert_Text is what I want to do text mining on. To get most frequent words used in them.
+
+##TEXT MINING
+library(tm)
+corpus <- Corpus(VectorSource(view$Alert_Text))
+clean_corpus <- tm_map(corpus, content_transformer(tolower), lazy= TRUE)
+clean_corpus <- tm_map(clean_corpus, removeNumbers, lazy= TRUE)
+clean_corpus <- tm_map(clean_corpus, removePunctuation, lazy= TRUE)
+clean_corpus <- tm_map(clean_corpus, removeWords, stopwords(), lazy= TRUE)
+clean_corpus <- tm_map(clean_corpus, stripWhitespace, lazy= TRUE)
+inspect(clean_corpus[1:5])
+#gives 5 cleaned words
+
+sms_dt <- DocumentTermMatrix(clean_corpus)
+inspect(sms_dt)
+
+#words gives 5 most frequent words
+
+words <- findFreqTerms(sms_dt,5)
+
+#ALL words with all frequencies is in FreqMat
+
+temp <- inspect(sms_dt)
+FreqMat <- data.frame(ST = colnames(temp) , Freq = colSums(temp))
+row.names(FreqMat) <- NULL
+head(FreqMat)
+
+#GIVES YOU SAME STRINGS IN A COLUMN
+n_occur <- data.frame(table(splunk$Alert_Text))
+View(n_occur[n_occur$Freq >1,])
+View(n_occur[n_occur$Freq >2,])
+
+
+
+
+
+---
+title: "Wine Quality Code"
+date: "April 12, 2016"
+output: pdf_document
+---
+
+```{r, eval=FALSE}
+# directory
+setwd("")
+install.packages("neuralnet")
+install.packages("e1071")
+install.packages("ROCR")
+install.packages("randomForest")
+```
+
+```{r}
+# Logistic Regression
+
+# setup
+red<-read.csv("")
+
+# dependent variable
+red$good<-ifelse(red$quality>5,1,0)
+white$good<-ifelse(white$quality>5,1,0)
+
+# partitioning
+set.seed(12345)
+red.inTrain <- sample(nrow(red),0.7*nrow(red))
+red.Train <- data.frame(red[red.inTrain,])
+red.Test <- data.frame(red[-red.inTrain,])
+
+white.inTrain <- sample(nrow(white),0.7*nrow(white))
+white.Train <- data.frame(white[white.inTrain,])
+white.Test <- data.frame(white[-white.inTrain,])
+
+red.glm<-glm(good~.-quality,data=red.Train,family="binomial")
+white.glm<-glm(good~.-quality,data=white.Train,family="binomial")
+
+summary(red.glm)
+summary(white.glm)
+
+red.actual<-red.Test$good
+red.probability<-predict(red.glm,newdata=red.Test,type="response")
+red.Test$probability<-red.probability
+red.cutoff<-0.5
+red.predicted<-ifelse(red.Test$probability>red.cutoff,1,0)
+red.Test$predicted<-red.predicted
+
+red.cm.glm<-table(red.actual,red.predicted)
+rownames(red.cm.glm)<-c("Bad","Good")
+colnames(red.cm.glm)<-c("Bad","Good")
+
+red.metrics<-c("Acc","Sens","Spec")
+  x<-sum(red.actual == red.predicted)/nrow(red.Test)
+  y<-sum(red.actual == 1 & red.predicted == 1)/sum(red.actual == 1)
+  z<-sum(red.actual == 0 & red.predicted == 0)/sum(red.actual == 0)
+  red.values<-c(x,y,z)
+  X<-data.frame(red.metrics,red.values)
+  X
+
+white.actual<-white.Test$good
+white.probability<-predict(white.glm,newdata=white.Test,type="response")
+white.Test$probability<-white.probability
+white.cutoff<-0.5
+white.predicted<-ifelse(white.Test$probability>white.cutoff,1,0)
+white.Test$predicted<-white.predicted
+
+white.cm.glm<-table(white.actual,white.predicted)
+rownames(white.cm.glm)<-c("Bad","Good")
+colnames(white.cm.glm)<-c("Bad","Good")
+
+white.metrics<-c("Acc","Sens","Spec")
+  a<-sum(white.actual == white.predicted)/nrow(white.Test)
+  b<-sum(white.actual == 1 & white.predicted == 1)/sum(white.actual == 1)
+  c<-sum(white.actual == 0 & white.predicted == 0)/sum(white.actual == 0)
+  white.values<-c(a,b,c)
+  Y<-data.frame(white.metrics,white.values)
+  Y
+
+#Used RegSubsets to find the most significant predictors.
+red.glm2<-glm(good~fixed.acidity+volatile.acidity+citric.acid+residual.sugar
+              +chlorides+free.sulfur.dioxide+total.sulfur.dioxide
+              +density+pH+sulphates+alcohol,data=red.Train,family="binomial")
+
+white.glm2<-glm(good~volatile.acidity+residual.sugar+free.sulfur.dioxide
+                +density+pH+sulphates+alcohol,data=white.Train,family="binomial")
+
+summary(red.glm2)
+summary(white.glm2)
+
+r.Test<-red.Test
+r.actual<-r.Test$good
+r.probability<-predict(red.glm2,newdata=red.Test,type="response")
+r.Test$probability<-r.probability
+r.cutoff<-0.5
+r.predicted<-ifelse(r.Test$probability>r.cutoff,1,0)
+r.Test$predicted<-r.predicted
+
+r.cm.glm<-table(r.actual,r.predicted)
+rownames(r.cm.glm)<-c("Bad","Good")
+colnames(r.cm.glm)<-c("Bad","Good")
+
+r.metrics<-c("Acc","Sens","Spec")
+  t<-sum(r.actual == r.predicted)/nrow(r.Test)
+  r<-sum(r.actual == 1 & r.predicted == 1)/sum(r.actual == 1)
+  s<-sum(r.actual == 0 & r.predicted == 0)/sum(r.actual == 0)
+  r.values<-c(t,r,s)
+  Z<-data.frame(r.metrics,r.values)
+  Z
+
+w.Test<-white.Test
+w.actual<-w.Test$good
+w.probability<-predict(white.glm2,newdata=white.Test,type="response")
+w.Test$probability<-w.probability
+w.cutoff<-0.5
+w.predicted<-ifelse(w.Test$probability>w.cutoff,1,0)
+w.Test$predicted<-w.predicted
+
+w.cm.glm<-table(w.actual,w.predicted)
+rownames(w.cm.glm)<-c("Bad","Good")
+colnames(w.cm.glm)<-c("Bad","Good")
+
+w.metrics<-c("Acc","Sens","Spec")
+  d<-sum(w.actual == w.predicted)/nrow(w.Test)
+  e<-sum(w.actual == 1 & w.predicted == 1)/sum(w.actual == 1)
+  f<-sum(w.actual == 0 & w.predicted == 0)/sum(w.actual == 0)
+  w.values<-c(d,e,f)
+  U<-data.frame(w.metrics,w.values)
+  U
+  
+```
+
+```{r}
+# Naive Bayes
+
+red.nb<-read.csv("")
+red.nb$good<-ifelse(red.nb$quality>5,1,0)
+white.nb$good<-ifelse(white.nb$quality>5,1,0)
+red.nb$quality<-NULL; white.nb$quality<-NULL
+red.nb$good<-as.factor(red.nb$good)
+white.nb$good<-as.factor(white.nb$good)
+
+## partitioning data set
+set.seed(12345)
+red.inTrain.nb <- sample(nrow(red.nb),0.7*nrow(red.nb))
+red.Train.nb <- data.frame(red.nb[red.inTrain.nb,])
+red.Validation.nb <- data.frame(red.nb[-red.inTrain.nb,])
+
+white.inTrain.nb <- sample(nrow(white.nb),0.7*nrow(white.nb))
+white.Train.nb <- data.frame(white.nb[white.inTrain.nb,])
+white.Validation.nb <- data.frame(white.nb[-white.inTrain.nb,])
+
+library(e1071)
+
+# Can handle both categorical and numeric input, 
+# but output must be categorical
+m0 <- naiveBayes(good~., data=red.Train.nb)
+m0
+prediction.red <- predict(m0, newdata=red.Validation.nb[,-12])
+
+# confusion matrix
+table(red.Validation.nb$good,prediction.red,dnn=list('actual','predicted'))
+m0$apriori
+
+# For class probabilities
+red.predicted.probability.nb <- predict(m0, newdata = red.Validation.nb[,-12], type="raw")
+
+# The first column is class 0, the second is class 1
+PL.red <- as.numeric(red.Validation.nb$good)-1
+prob.red <- red.predicted.probability.nb[,2]
+df1.red <- data.frame(prediction.red, PL.red, prob.red)
+#
+#
+df1S.red <- df1.red[order(-prob.red),]
+df1S.red$Gains <- cumsum(df1S.red$PL)
+plot(df1S.red$Gains,type="n",main="Lift Chart",xlab="Number of Cases",ylab="Cumulative Success")
+lines(df1S.red$Gains,col="blue")
+abline(0,sum(df1S.red$PL)/nrow(df1S.red),lty = 2, col="red")
+
+m1 <- naiveBayes(good~., data=white.Train.nb)
+m1
+prediction.white <- predict(m1, newdata=white.Validation.nb[,-12])
+
+# confusion matrix
+table(white.Validation.nb$good,prediction.white,dnn=list('actual','predicted')) 
+m1$apriori
+
+# For class probabilities
+white.predicted.probability.nb <- predict(m1, newdata = white.Validation.nb[,-12], type="raw")
+
+# The first column is class 0, the second is class 1
+PL.white <- as.numeric(white.Validation.nb$good)-1
+prob.white <- white.predicted.probability.nb[,2]
+df1.white <- data.frame(prediction.white, PL.white, prob.white)
+#
+#
+df1S.white <- df1.white[order(-prob.white),]
+df1S.white$Gains <- cumsum(df1S.white$PL)
+plot(df1S.white$Gains,type="n",main="Lift Chart",xlab="Number of Cases",ylab="Cumulative Success")
+lines(df1S.white$Gains,col="blue")
+abline(0,sum(df1S.white$PL)/nrow(df1S.white),lty = 2, col="orange")
+
+```
+
+```{r}
+
+#Neural Network
+
+red.nn<-read.csv("")
+white.nn<-read.csv("")
+
+# dependent variable
+red.nn$good<-ifelse(red.nn$quality>5,1,0)
+white.nn$good<-ifelse(white.nn$quality>5,1,0)
+red.nn$quality<-NULL
+white.nn$quality<-NULL
+
+# normalization
+fun <- function(x){ 
+  a <- mean(x) 
+  b <- sd(x) 
+  (x - a)/(b) 
+}
+
+red.nn[,1:11] <-apply(red.nn[,1:11],2,fun)
+white.nn[,1:11] <-apply(white.nn[,1:11],2,fun)
+
+#Partitioning
+set.seed(12345)
+red.nn.inTrain <- sample(nrow(red.nn),0.7*nrow(red.nn))
+red.nn.Train <- data.frame(red.nn[red.nn.inTrain,])
+red.nn.Test <- data.frame(red.nn[-red.nn.inTrain,])
+
+white.nn.inTrain <- sample(nrow(white.nn),0.7*nrow(white.nn))
+white.nn.Train <- data.frame(white.nn[white.nn.inTrain,])
+white.nn.Test <- data.frame(white.nn[-white.nn.inTrain,])
+
+library(neuralnet)
+
+#Red Wine
+red.nn <- neuralnet(good ~ fixed.acidity + volatile.acidity + citric.acid + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + density + pH + sulphates + alcohol, data=red.nn.Train, hidden=c(4))
+plot(red.nn)
+prediction.red.nn <- compute(red.nn,red.nn.Test[,1:11])$net.result
+prediction.red.nn
+predicted.red.nn <- ifelse(prediction.red.nn > 0.5 , 1, 0) 
+actual.red.nn <- red.nn.Test$good
+confusion.red.nn <- table(actual.red.nn, predicted.red.nn)
+confusion.red.nn
+
+red.nn.metrics<-c("Acc","Sens","Spec")
+x.nn<-sum(actual.red.nn == predicted.red.nn)/nrow(red.nn.Test)
+y.nn<-sum(actual.red.nn == 1 & predicted.red.nn == 1)/sum(actual.red.nn == 1)
+z.nn<-sum(actual.red.nn == 0 & predicted.red.nn == 0)/sum(actual.red.nn == 0)
+red.nn.values<-c(x.nn,y.nn,z.nn)
+X.nn<-data.frame(red.nn.metrics,red.nn.values)
+X.nn
+
+#White Wine
+white.nn <- neuralnet(good ~ fixed.acidity + volatile.acidity + citric.acid + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + density + pH + sulphates + alcohol, data=white.nn.Train, hidden=c(4))
+plot(white.nn)
+prediction.white.nn <- compute(white.nn,white.nn.Test[,1:11])$net.result
+prediction.white.nn
+predicted.white.nn <- ifelse(prediction.white.nn > 0.5 , 1, 0) 
+actual.white.nn <- white.nn.Test$good
+confusion.white.nn <- table(actual.white.nn, predicted.white.nn)
+confusion.white.nn
+
+white.nn.metrics<-c("Acc","Sens","Spec")
+a.nn<-sum(actual.white.nn == predicted.white.nn)/nrow(white.nn.Test)
+b.nn<-sum(actual.white.nn == 1 & predicted.white.nn == 1)/sum(actual.white.nn == 1)
+c.nn<-sum(actual.white.nn == 0 & predicted.white.nn == 0)/sum(actual.white.nn == 0)
+white.nn.values<-c(a.nn,b.nn,c.nn)
+Y.nn<-data.frame(white.nn.metrics,white.nn.values)
+Y.nn
+
+```
+
+```{r}
+# Random Forest
+
+#setup
+red.RF <- read.csv("")
+white.RF <- read.csv("")
+
+# dependent variable
+red.RF$good<-ifelse(red.RF$quality>5,1,0)
+white.RF$good<-ifelse(white.RF$quality>5,1,0)
+as.factor(red.RF$good)
+as.factor(white.RF$good)
+
+# partitioning
+set.seed(12345)
+red.inTrain.RF <- sample(nrow(red.RF),0.7*nrow(red.RF))
+red.Train.RF <- data.frame(red.RF[red.inTrain.RF,])
+red.Test.RF <- data.frame(red.RF[-red.inTrain.RF,])
+
+white.inTrain.RF <- sample(nrow(white.RF),0.7*nrow(white.RF))
+white.Train.RF <- data.frame(white.RF[white.inTrain.RF,])
+white.Test.RF <- data.frame(white.RF[-white.inTrain.RF,])
+
+#Load library
+library(randomForest)
+library(ROCR)
+
+#Random Forest for Red Wine
+red.Train.RF <- randomForest(good~.-quality, data = red.Train.RF, ntree = 700, mtry = 11)
+red.Train.RF
+
+#Predict on Test set
+pred.red.RF <- predict(red.Train.RF, red.Test.RF)
+pred.red.RF <- ifelse(pred.red.RF>0.5, 1, 0)
+table(red.Test.RF[,13],pred.red.RF)
+mean(red.Test.RF[,13]==pred.red.RF)
+
+#Importance level
+importance(red.Train.RF)[order(importance(red.Train.RF)[,1], decreasing = TRUE),1]
+red.RF.tree <- getTree(red.Train.RF, 15, labelVar = TRUE)
+
+#Error plot
+plot(red.Test.RF)
+
+#Error
+error.red.RF <- 87/480
+error.red.RF
+varImpPlot(red.Train.RF)
+
+#Acc, Sens, Spec
+red.actual.RF <- red.Test.RF$good
+red.predicted.RF <- pred.red.RF
+
+red.RF.table <-table(red.actual.RF,red.predicted.RF)
+rownames(red.RF.table)<-c("Bad","Good")
+colnames(red.RF.table)<-c("Bad","Good")
+red.metrics.RF<-c("Acc","Sens","Spec")
+red.x.rf<-sum(red.actual.RF == red.predicted.RF)/nrow(red.Test.RF)
+red.y.rf<-sum(red.actual.RF == 1 & red.predicted.RF == 1)/sum(red.actual.RF == 1)
+red.z.rf<-sum(red.actual.RF == 0 & red.predicted.RF == 0)/sum(red.actual.RF == 0)
+red.values.RF<-c(red.x.rf,red.y.rf,red.z.rf)
+Red.X.RF<-data.frame(red.metrics.RF,red.values.RF)
+Red.X.RF
+
+#Random Forest for White Wine
+white.Train.RF <- randomForest(good~.-quality, data = white.Train.RF, ntree = 700, mtry = 11)
+white.Train.RF
+
+#Predict on Test set
+pred.white.RF <- predict(white.Train.RF, white.Test.RF)
+pred.white.RF <- ifelse(pred.white.RF>0.5, 1, 0)
+table(white.Test.RF[,13],pred.white.RF)
+mean(white.Test.RF[,13]==pred.white.RF)
+
+#Importance level
+importance(white.Train.RF)[order(importance(white.Train.RF)[,1], decreasing = TRUE),1]
+white.RF.tree <- getTree(white.Train.RF, 15, labelVar = TRUE)
+
+#Error plot
+plot(white.Train.RF)
+
+#Error
+error.white.RF <- 271/1470
+error.white.RF
+varImpPlot(white.Train.RF)
+
+#Acc, Sens, Spec
+white.actual.RF <- white.Test.RF$good
+white.predicted.RF <- pred.white.RF 
+
+white.RF.table <-table(white.actual.RF,white.predicted.RF)
+rownames(white.RF.table)<-c("Bad","Good")
+colnames(white.RF.table)<-c("Bad","Good")
+white.metrics.RF<-c("Acc","Sens","Spec")
+white.x.rf<-sum(white.actual.RF == white.predicted.RF)/nrow(white.Test.RF)
+white.y.rf<-sum(white.actual.RF == 1 & white.predicted.RF == 1)/sum(white.actual.RF == 1)
+white.z.rf<-sum(white.actual.RF == 0 & white.predicted.RF == 0)/sum(white.actual.RF == 0)
+white.values.RF<-c(white.x.rf,white.y.rf,white.z.rf)
+White.X.RF<-data.frame(white.metrics.RF,white.values.RF)
+White.X.RF
+
+```
+
+
+```{r}
+## ROC Curves for Red Wine
+
+## logistic red wine
+cutoff<-seq(0,1,length=1000)
+fpr<-numeric(1000)
+tpr<-numeric(1000)
+
+#collect in data frame
+roc.table.logistic<-data.frame(Cutoff=cutoff,FPR=fpr,TPR=tpr)
+
+#TPR is the Sensitivity; FPR is 1-Specificity
+for (i in 1:1000) {
+  roc.table.logistic$FPR[i] <- sum(red.probability > cutoff[i] & red.actual == 0)/sum(red.actual == 0)
+  roc.table.logistic$TPR[i] <- sum(red.probability > cutoff[i] & red.actual == 1)/sum(red.actual == 1)
+}
+
+plot(TPR~FPR,data=roc.table.logistic,col="blue",lty=2,type="l",main="ROC Curves for Red Wine",xlab="1-Specificity",ylab="Sensitivity")
+abline(a=0,b=1,lty=2,col="red")
+
+## Naive Bayes red wine
+prediction.nb.red <- predict(m0, newdata = red.Validation.nb, type = "raw")
+actual.nb.red <- red.Validation.nb$good
+predicted.probability.nb.red <- prediction.nb.red[,2]
+  
+cutoff <- seq(0, 1, length = 1000)
+fpr <- numeric(1000)
+tpr <- numeric(1000)
+  
+roc.table.nb <- data.frame(Cutoff = cutoff, FPR = fpr, TPR = tpr)
+  
+for (i in 1:1000) {
+  roc.table.nb$FPR[i] <- sum(predicted.probability.nb.red > cutoff[i] & actual.nb.red == 0)/sum(actual.nb.red == 0)
+  roc.table.nb$TPR[i] <- sum(predicted.probability.nb.red > cutoff[i] & actual.nb.red == 1)/sum(actual.nb.red == 1)
+}
+
+lines(TPR~FPR,data=roc.table.nb,col="wheat4",lty=2)
+
+# Neural Network Red Wine
+cutoff<-seq(0,1,length=1000)
+fpr<-numeric(1000)
+tpr<-numeric(1000)
+
+#collect in data frame
+roc.table.nn<-data.frame(Cutoff=cutoff,FPR=fpr,TPR=tpr)
+
+#TPR is the Sensitivity; FPR is 1-Specificity
+for (i in 1:1000) {
+  roc.table.nn$FPR[i] <- sum(prediction.red.nn > cutoff[i] & actual.red.nn == 0)/sum(actual.red.nn == 0)
+  roc.table.nn$TPR[i] <- sum(prediction.red.nn > cutoff[i] & actual.red.nn == 1)/sum(actual.red.nn == 1)
+}
+
+lines(TPR~FPR,data=roc.table.nn,col="limegreen",lty=2)
+
+legend(locator(1),legend=c("Red_Logistic","Red_Naive Bayes","Red_Neural Network"),lty=2,col=c("blue","wheat4","limegreen"),title = "Legend",cex=0.8,bty="n")
+```
+
+```{r}
+# ROC Curves for White Wine
+
+## Logistic white wine
+cutoff<-seq(0,1,length=1000)
+fpr<-numeric(1000)
+tpr<-numeric(1000)
+
+#collect in data frame
+roc.table.logistic<-data.frame(Cutoff=cutoff,FPR=fpr,TPR=tpr)
+
+for (i in 1:1000) {
+  roc.table.logistic$FPR[i] <- sum(white.probability > cutoff[i] & white.actual == 0)/sum(white.actual == 0)
+  roc.table.logistic$TPR[i] <- sum(white.probability > cutoff[i] & white.actual == 1)/sum(white.actual == 1)
+}
+plot(TPR~FPR,data=roc.table.logistic,col="blueviolet",lty=2,type="l",main="ROC Curves for White Wine",xlab="1-Specificity",ylab="Sensitivity")
+abline(a=0,b=1,lty=2,col="red")
+
+
+## Naive Bayes white wine
+prediction.nb.white <- predict(m1, newdata = white.Validation.nb, type = "raw")
+actual.nb.white <- white.Validation.nb$good
+predicted.probability.nb.white <- prediction.nb.white[,2]
+  
+cutoff <- seq(0, 1, length = 1000)
+fpr <- numeric(1000)
+tpr <- numeric(1000)
+  
+roc.table.nb <- data.frame(Cutoff = cutoff, FPR = fpr, TPR = tpr)
+  
+for (i in 1:1000) {
+  roc.table.nb$FPR[i] <- sum(predicted.probability.nb.white > cutoff[i] & actual.nb.white == 0)/sum(actual.nb.white == 0)
+  roc.table.nb$TPR[i] <- sum(predicted.probability.nb.white > cutoff[i] & actual.nb.white == 1)/sum(actual.nb.white == 1)
+}
+
+lines(TPR~FPR,data=roc.table.nb,col="green3",lty=2)
+
+# Neural Network White Wine
+cutoff<-seq(0,1,length=1000)
+fpr<-numeric(1000)
+tpr<-numeric(1000)
+
+#collect in data frame
+roc.table.nn<-data.frame(Cutoff=cutoff,FPR=fpr,TPR=tpr)
+
+#TPR is the Sensitivity; FPR is 1-Specificity
+for (i in 1:1000) {
+  roc.table.nn$FPR[i] <- sum(prediction.white.nn > cutoff[i] & actual.white.nn == 0)/sum(actual.white.nn == 0)
+  roc.table.nn$TPR[i] <- sum(prediction.white.nn > cutoff[i] & actual.white.nn == 1)/sum(actual.white.nn == 1)
+}
+
+lines(TPR~FPR,data=roc.table.nn,col="yellow2",lty=2)
+
+legend(locator(1),legend=c("White_Logistic","White_Naive Bayes","White_Neural Network"),lty=2,col=c("blueviolet","green3","yellow2"),title = "Legend",cex=0.8,bty="n")
+
+```
